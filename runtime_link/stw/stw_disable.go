@@ -1,5 +1,5 @@
-//go:build go1.23 && mockey_stw
-// +build go1.23,mockey_stw
+//go:build go1.23 && !mockey_stw
+// +build go1.23,!mockey_stw
 
 /*
  * Copyright 2022 ByteDance Inc.
