@@ -2,6 +2,7 @@ package gomonkey
 
 import (
 	"fmt"
+	"github.com/agiledragon/gomonkey/v2/runtime_link/stw"
 	"reflect"
 	"syscall"
 	"unsafe"
@@ -71,8 +72,10 @@ func ApplyFuncVarReturn(target interface{}, output ...interface{}) *Patches {
 }
 
 func create() *Patches {
-	return &Patches{originals: make(map[uintptr][]byte), targets: map[uintptr]uintptr{},
-		values: make(map[reflect.Value]reflect.Value), valueHolders: make(map[reflect.Value]reflect.Value)}
+	return &Patches{
+		originals: make(map[uintptr][]byte), targets: map[uintptr]uintptr{},
+		values: make(map[reflect.Value]reflect.Value), valueHolders: make(map[reflect.Value]reflect.Value),
+	}
 }
 
 func NewPatches() *Patches {
@@ -210,6 +213,9 @@ func (this *Patches) ApplyFuncVarReturn(target interface{}, returns ...interface
 }
 
 func (this *Patches) Reset() {
+	ctx := stw.NewSTWCtx()
+	ctx.StopTheWorld()
+	defer ctx.StartTheWorld()
 	for target, bytes := range this.originals {
 		modifyBinary(target, bytes)
 		delete(this.originals, target)
@@ -288,6 +294,9 @@ func (this *Patches) check(target, double reflect.Value) {
 }
 
 func replace(target, double uintptr) []byte {
+	ctx := stw.NewSTWCtx()
+	ctx.StopTheWorld()
+	defer ctx.StartTheWorld()
 	code := buildJmpDirective(double)
 	bytes := entryAddress(target, len(code))
 	original := make([]byte, len(bytes))
@@ -298,8 +307,12 @@ func replace(target, double uintptr) []byte {
 
 func getDoubleFunc(funcType reflect.Type, outputs []OutputCell) reflect.Value {
 	if funcType.NumOut() != len(outputs[0].Values) {
-		panic(fmt.Sprintf("func type has %v return values, but only %v values provided as double",
-			funcType.NumOut(), len(outputs[0].Values)))
+		panic(
+			fmt.Sprintf(
+				"func type has %v return values, but only %v values provided as double",
+				funcType.NumOut(), len(outputs[0].Values),
+			),
+		)
 	}
 
 	needReturn := false
@@ -323,16 +336,18 @@ func getDoubleFunc(funcType reflect.Type, outputs []OutputCell) reflect.Value {
 
 	i := 0
 	lenOutputs := len(slice)
-	return reflect.MakeFunc(funcType, func(_ []reflect.Value) []reflect.Value {
-		if needReturn {
-			return GetResultValues(funcType, slice[0]...)
-		}
-		if i < lenOutputs {
-			i++
-			return GetResultValues(funcType, slice[i-1]...)
-		}
-		panic("double seq is less than call seq")
-	})
+	return reflect.MakeFunc(
+		funcType, func(_ []reflect.Value) []reflect.Value {
+			if needReturn {
+				return GetResultValues(funcType, slice[0]...)
+			}
+			if i < lenOutputs {
+				i++
+				return GetResultValues(funcType, slice[i-1]...)
+			}
+			panic("double seq is less than call seq")
+		},
+	)
 }
 
 func GetResultValues(funcType reflect.Type, results ...interface{}) []reflect.Value {
@@ -374,13 +389,15 @@ func funcToMethod(funcType reflect.Type, doubleFunc interface{}) reflect.Value {
 		panic("doubleFunc is not a func")
 	}
 	vf := reflect.ValueOf(doubleFunc)
-	return reflect.MakeFunc(funcType, func(in []reflect.Value) []reflect.Value {
-		if funcType.IsVariadic() {
-			return vf.CallSlice(in[1:])
-		} else {
-			return vf.Call(in[1:])
-		}
-	})
+	return reflect.MakeFunc(
+		funcType, func(in []reflect.Value) []reflect.Value {
+			if funcType.IsVariadic() {
+				return vf.CallSlice(in[1:])
+			} else {
+				return vf.Call(in[1:])
+			}
+		},
+	)
 }
 
 func castRType(val interface{}) reflect.Type {
