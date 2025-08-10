@@ -2,12 +2,11 @@ package gomonkey
 
 import (
 	"fmt"
-	"github.com/agiledragon/gomonkey/v2/runtime_link/stw"
+	"github.com/letianxhz/gomonkey/creflect"
+	"github.com/letianxhz/gomonkey/runtime_link/stw"
 	"reflect"
 	"syscall"
 	"unsafe"
-
-	"github.com/agiledragon/gomonkey/v2/creflect"
 )
 
 type Patches struct {
